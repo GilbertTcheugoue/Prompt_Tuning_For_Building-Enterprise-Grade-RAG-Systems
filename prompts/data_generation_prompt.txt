@@ -8,11 +8,11 @@ example:
 [
 {
     "user": "What is the name of the company?",
-    "assistant": "Google"
+    "assistant": "Amazone"
 },
 {
-    "user": "What is the name of the CEO?",
-    "assistant": "Sundar Pichai"
+    "user": "who is the president and chief executive officer (CEO) of Amazon?",
+    "assistant": "Andrew R. Jassy"
 }
 ]
 
