@@ -5,29 +5,73 @@ from openai import OpenAI
 from math import exp
 import numpy as np
 from utility.env_manager import get_env_manager
-from evaluation._data_generation import get_completion
-from evaluation._data_generation import file_reader
 
 env_manager = get_env_manager()
 client = OpenAI(api_key=env_manager["openai_keys"]["OPENAI_API_KEY"])
 
 
-def evaluate(
-    prompt: str, user_message: str, context: str, use_test_data: bool = False
+def get_completion(
+    messages: list[dict[str, str]],
+    model: str = env_manager["vectordb_keys"]["VECTORDB_MODEL"],
+    max_tokens=500,
+    temperature=0,
+    stop=None,
+    seed=123,
+    tools=None,
+    logprobs=None,
+    top_logprobs=None,
 ) -> str:
+    """Return the completion of the prompt.
+    @parameter messages: list of dictionaries with keys 'role' and 'content'.
+    @parameter model: the model to use for completion. Defaults to 'davinci'.
+    @parameter max_tokens: max tokens to use for each prompt completion.
+    @parameter temperature: the higher the temperature, the crazier the text
+    @parameter stop: token at which text generation is stopped
+    @parameter seed: random seed for text generation
+    @parameter tools: list of tools to use for post-processing the output.
+    @parameter logprobs: whether to return log probabilities of the output tokens or not.
+    @returns completion: the completion of the prompt.
+    """
+
+    params = {
+        "model": model,
+        "messages": messages,
+        "max_tokens": max_tokens,
+        "temperature": temperature,
+        "stop": stop,
+        "seed": seed,
+        "logprobs": logprobs,
+        "top_logprobs": top_logprobs,
+    }
+    if tools:
+        params["tools"] = tools
+
+    completion = client.chat.completions.create(**params)
+    return completion
+
+
+def file_reader(
+    path: str,
+) -> str:
+    fname = os.path.join(path)
+    with open(fname, "r") as f:
+        system_message = f.read()
+    return system_message
+
+
+def generate_test_data(prompt: str, context: str, num_test_output: str) -> str:
     """Return the classification of the hallucination.
     @parameter prompt: the prompt to be completed.
     @parameter user_message: the user message to be classified.
     @parameter context: the context of the user message.
     @returns classification: the classification of the hallucination.
     """
-    num_test_output = str(10)
     API_RESPONSE = get_completion(
         [
             {
-                "role": "system",
-                "content": prompt.replace("{Context}", context).replace(
-                    "{Question}", user_message
+                "role": "user",
+                "content": prompt.replace("{context}", context).replace(
+                    "{num_test_output}", num_test_output
                 ),
             }
         ],
@@ -36,31 +80,33 @@ def evaluate(
         top_logprobs=1,
     )
 
-    system_msg = str(API_RESPONSE.choices[0].message.content)
+    system_msg = API_RESPONSE.choices[0].message.content
+    return system_msg
 
-    for i, logprob in enumerate(
-        API_RESPONSE.choices[0].logprobs.content[0].top_logprobs, start=1
-    ):
-        output = f"\nhas_sufficient_context_for_answer: {system_msg}, \nlogprobs: {logprob.logprob}, \naccuracy: {np.round(np.exp(logprob.logprob)*100,2)}%\n"
-        print(output)
-        if system_msg == "true" and np.round(np.exp(logprob.logprob) * 100, 2) >= 95.00:
-            classification = "true"
-        elif (
-            system_msg == "false"
-            and np.round(np.exp(logprob.logprob) * 100, 2) >= 95.00
-        ):
-            classification = "false"
-        else:
-            classification = "false"
-    return classification
+
+def main(num_test_output: str):
+    context_message = file_reader("prompts/context.txt")
+    prompt_message = file_reader("prompts/data_generation_prompt.txt")
+    context = str(context_message)
+    prompt = str(prompt_message)
+    _test_data = generate_test_data(prompt, context, num_test_output)
+
+    def save_json(_test_data) -> None:
+        # Specify the file path
+        file_path = "test_dataset/test_data.json"
+        json_object = json.loads(_test_data)
+        with open(file_path, "w") as json_file:
+            json.dump(json_object, json_file, indent=4)
+
+        print(f"JSON data has been saved to {file_path}")
+
+    save_json(_test_data)
+
+    print("===========")
+    print("Test Data")
+    print("===========")
+    print(test_data)
 
 
 if __name__ == "__main__":
-    context_message = file_reader("prompts/context.txt")
-    prompt_message = file_reader("prompts/generic_evaluation_prompt.txt")
-    context = str(context_message)
-    prompt = str(prompt_message)
-
-    user_message = str(input("question: "))
-
-    print(evaluate(prompt, user_message, context))
+    main("5")  # n number of test data to generate
